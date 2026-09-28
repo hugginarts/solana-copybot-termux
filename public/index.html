@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana CopyTrade Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4">
+    <div class="max-w-md mx-auto space-y-4">
+        <header class="flex justify-between items-center border-b border-slate-800 pb-3">
+            <h1 class="text-lg font-bold text-emerald-400">⚡ Solana CopyBot</h1>
+            <span id="bot-status" class="px-2 py-1 text-xs rounded bg-red-950 text-red-400 border border-red-800">Detenido</span>
+        </header>
+
+        <!-- Panel de Control Principal -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div class="flex justify-between items-center">
+                <span class="text-sm font-medium">Estado del Bot</span>
+                <button onclick="toggleBot()" id="btn-toggle" class="px-4 py-1.5 rounded-lg text-sm font-bold bg-emerald-600 text-white shadow-lg">Iniciar Bot</button>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-sm font-medium">Modo de Operación</span>
+                <select id="bot-mode" onchange="updateConfig()" class="bg-slate-800 text-xs p-2 rounded border border-slate-700">
+                    <option value="paper">Paper Trading (Simulador)</option>
+                    <option value="live">Live Trading (preparación)</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-slate-400 block mb-1">Wallet a Copiar (Solana)</label>
+                <input type="text" id="target-wallet" placeholder="Dirección de la wallet..." class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-slate-200">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Monto por Trade (SOL)</label>
+                    <input type="number" id="amount-sol" value="0.1" step="0.01" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Max Slippage (%)</label>
+                    <input type="number" id="max-slippage" value="1.0" step="0.1" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <label>Take Profit (%)<input id="take-profit" type="number" min="0.1" value="25" class="w-full bg-slate-950 border border-slate-700 rounded p-2 mt-1"></label>
+                <label>Vender al TP (%)<input id="tp-sell" type="number" min="1" max="100" value="100" class="w-full bg-slate-950 border border-slate-700 rounded p-2 mt-1"></label>
+                <label>Stop Loss (%)<input id="stop-loss" type="number" min="0.1" max="99" value="12" class="w-full bg-slate-950 border border-slate-700 rounded p-2 mt-1"></label>
+                <label>Trailing desde máximo (%)<input id="trailing-stop" type="number" min="0" max="99" value="0" class="w-full bg-slate-950 border border-slate-700 rounded p-2 mt-1"></label>
+                <label>Liquidez mínima (USD)<input id="min-liquidity" type="number" min="0" value="0" class="w-full bg-slate-950 border border-slate-700 rounded p-2 mt-1"></label>
+                <label>Edad máxima del pool (min)<input id="max-pool-age" type="number" min="0" value="0" class="w-full bg-slate-950 border border-slate-700 rounded p-2 mt-1"></label>
+                <label>Prioridad estimada (SOL/tx)<input id="priority-fee" type="number" min="0" max="0.1" step="0.000001" value="0.0001" class="w-full bg-slate-950 border border-slate-700 rounded p-2 mt-1"></label>
+            </div>
+            <p class="text-xs text-slate-400">0 desactiva trailing o filtro de edad. El trailing protege el resto tras el primer TP parcial. Prioridad es una estimación paper; no acelera la señal.</p>
+            <button type="button" id="save-config" class="px-3 py-2 bg-sky-700 rounded font-bold text-xs">Guardar parámetros paper</button>
+            <p id="save-status" role="status" aria-live="polite" class="text-xs text-slate-300"></p>
+        </div>
+        <div id="live-setup" hidden class="bg-amber-950/50 border border-amber-700 rounded-xl p-4 text-xs space-y-2">
+            <h2 class="font-bold">Preparar wallet para modo live</h2>
+            <p>Abre este panel desde el navegador de Phantom en este teléfono. La wallet que conectes debe ser TU wallet; «Wallet a copiar» es la wallet del trader.</p>
+            <button id="connect-wallet" type="button" class="px-3 py-2 rounded bg-indigo-600 font-bold">Conectar Phantom y firmar mensaje</button>
+            <p id="wallet-status" role="status" aria-live="polite">Wallet sin verificar.</p>
+            <p class="text-amber-200">La firma verifica la wallet y no autoriza operaciones. Las compras live automáticas siguen deshabilitadas: falta un ejecutor de swaps probado. No introduzcas tu clave privada ni frase de recuperación.</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs flex items-center justify-between gap-2">
+            <div><b>Reiniciar simulación</b><p class="text-slate-400">Borra historial, posiciones y PNL paper; detiene el bot.</p></div>
+            <button type="button" id="reset-data" class="shrink-0 px-3 py-2 bg-red-800 rounded font-bold">Borrar historial</button>
+        </div>
+
+        <!-- Tarjetas de Métricas -->
+        <div class="grid grid-cols-2 gap-3">
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                <span class="text-xs text-slate-400">PNL Total</span>
+                <p id="metric-pnl" class="text-lg font-bold text-emerald-400">0.0000 SOL</p><p id="metric-usd" class="text-xs text-slate-400">USD —</p>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+                <span class="text-xs text-slate-400">Win Rate</span>
+                <p id="metric-winrate" class="text-lg font-bold text-blue-400">0.0%</p><p id="metric-count" class="text-xs text-slate-400">0 cerrados</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3"><div class="text-slate-400">Cerradas</div><b id="stat-total" class="text-lg">0</b></div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3"><div class="text-slate-400">Ganadas</div><b id="stat-wins" class="text-lg text-emerald-400">0</b></div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3"><div class="text-slate-400">Perdidas</div><b id="stat-losses" class="text-lg text-red-400">0</b></div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs">
+            <h2 class="font-bold mb-2">Evolución del PNL paper</h2>
+            <div id="pnl-chart" role="img" aria-label="PNL acumulado en SOL por operación cerrada"></div>
+            <p id="trade-costs" class="text-slate-400 mt-2"></p>
+            <p class="text-slate-500 mt-1">El gráfico incluye solo ventas cerradas y costos estimados. No muestra operaciones omitidas.</p>
+        </div>
+
+        <div class="bg-amber-950/50 border border-amber-800 text-amber-100 text-xs rounded-xl p-3">Solo paper. No se ejecutan compras reales. El precio y la liquidez de DEX Screener permiten una estimación, no garantizan el precio ejecutable. Operaciones sin precio verificable no se abren. El historial empieza al iniciar, sin datos anteriores.</div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs"><b>Comprobaciones aún no disponibles</b><p class="text-slate-400 mt-1">Honeypot, rugpull, impuestos/Token-2022 y Jito tip requieren datos y rutas de ejecución verificadas. No se aplican como filtros ahora. La antigüedad usa creación del pool DEX, no creación del token.</p></div>
+        <p id="rpc-status" class="text-xs text-slate-400"></p>
+        <div id="positions" class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs"></div>
+        <!-- Historial de Trades -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <h2 class="text-xs font-bold text-slate-400 uppercase mb-2">Señales verificadas · Paper (costos estimados)</h2>
+            <div id="trades-list" class="space-y-2 max-h-48 overflow-y-auto text-xs">
+                <p class="text-slate-500 text-center py-4">Sin operaciones aún...</p>
+            </div>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4"><div class="flex justify-between items-center gap-2 mb-2"><h2 class="text-xs font-bold text-slate-400">Señales y motivos</h2><button type="button" id="copy-events" class="px-2 py-1 bg-slate-700 rounded text-xs text-white">📋 Copiar todos</button></div><div id="events" class="max-h-40 overflow-y-auto text-xs space-y-2"></div><p id="copy-status" role="status" aria-live="polite" class="text-xs text-emerald-400 mt-2"></p></div>
+    </div>
+
+    <script>
+        const el = id => document.getElementById(id);
+        const safe = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+        const fmt = (v, d=5) => v == null ? '—' : Number(v).toFixed(d);
+        const pubkey = s => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s || '');
+        const chart = mint => pubkey(mint) ? `https://dexscreener.com/solana/${encodeURIComponent(mint)}` : '';
+        const txurl = sig => /^[1-9A-HJ-NP-Za-km-z]{80,100}$/.test(sig || '') ? `https://solscan.io/tx/${encodeURIComponent(sig)}` : '';
+        const eventText = e => `${new Date(e.at).toLocaleString()} · ${e.message}`;
+        async function copyText(value) {
+            try { await navigator.clipboard.writeText(value); }
+            catch (_) { const field=document.createElement('textarea'); field.value=value; field.style.position='fixed'; field.style.opacity='0'; document.body.appendChild(field); field.select(); const ok=document.execCommand('copy'); field.remove(); if(!ok) throw Error('No se pudo copiar'); }
+            el('copy-status').textContent='Copiado al portapapeles';
+            setTimeout(()=>{el('copy-status').textContent=''},2500);
+        }
+        el('events').addEventListener('click', e => {
+            const btn=e.target.closest('button[data-event]');
+            if(btn && current?.events[Number(btn.dataset.event)]) copyText(eventText(current.events[Number(btn.dataset.event)])).catch(err=>el('copy-status').textContent=err.message);
+        });
+        el('copy-events').addEventListener('click',()=>copyText((current?.events||[]).map(eventText).join('\n')||'Sin señales').catch(err=>el('copy-status').textContent=err.message));
+        let current, initialized = false;
+        function drawChart(trades) {
+            const closed=trades.filter(t=>t.side==='SELL').reverse();
+            if(!closed.length){el('pnl-chart').textContent='El gráfico aparecerá al cerrar una operación.';return;}
+            const values=[0];for(const t of closed) values.push(values.at(-1)+Number(t.pnlSol||0));
+            const low=Math.min(0,...values), high=Math.max(0,...values), span=Math.max(high-low,0.00001);
+            const x=i=>12+i*296/Math.max(1,values.length-1), y=v=>105-(v-low)*85/span;
+            const points=values.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+            const color=values.at(-1)>=0?'#34d399':'#f87171';
+            el('pnl-chart').innerHTML=`<svg class="w-full h-32" viewBox="0 0 320 125" preserveAspectRatio="none" aria-hidden="true"><line x1="12" x2="308" y1="${y(0)}" y2="${y(0)}" stroke="#64748b" stroke-dasharray="4 4"/><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${values.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="2.5" fill="${color}"/>`).join('')}</svg><div class="flex justify-between text-slate-400"><span>Inicio: 0 SOL</span><span>${closed.length} cerradas · ${fmt(values.at(-1),5)} SOL</span></div>`;
+        }
+        function updateUI(s) {
+            current = s;
+            const running = s.config.enabled;
+            el('bot-status').innerText = running ? 'ESCUCHANDO' : 'PAUSADO';
+            el('bot-status').className = running ? 'px-2 py-1 text-xs rounded bg-emerald-950 text-emerald-400 border border-emerald-800' : 'px-2 py-1 text-xs rounded bg-red-950 text-red-400 border border-red-800';
+            el('btn-toggle').innerText = running ? 'Detener Bot' : 'Iniciar Bot';
+            el('btn-toggle').className = running ? 'px-4 py-1.5 rounded-lg text-sm font-bold bg-red-600 text-white' : 'px-4 py-1.5 rounded-lg text-sm font-bold bg-emerald-600 text-white';
+            if (!initialized) {
+                el('target-wallet').value=s.config.wallet; el('amount-sol').value=s.config.solAmount;
+                el('max-slippage').value=s.config.maxSlippage; initialized=true;
+                for(const [id,key] of [['take-profit','takeProfit'],['tp-sell','takeProfitSellPct'],['stop-loss','stopLoss'],['trailing-stop','trailingStopPct'],['min-liquidity','minLiquidityUsd'],['max-pool-age','maxPoolAgeMin'],['priority-fee','priorityFeeSol']])el(id).value=s.config[key]??0;
+            }
+            el('rpc-status').innerText = `RPC: ${s.status} · Última señal: ${s.lastSignal?.signature?.slice(0,12) || 'ninguna'} · Red: ${fmt(s.model.networkFeeSol,6)} SOL / operación · DEX: ${fmt(s.model.dexFeePct,2)}%`;
+            el('metric-pnl').innerText = `${fmt(s.metrics.realizedSol,4)} SOL`;
+            el('metric-usd').innerText = s.metrics.realizedUsd == null ? 'USD —' : `$${fmt(s.metrics.realizedUsd,2)}`;
+            el('metric-winrate').innerText = `${fmt(s.metrics.winRate,1)}%`;
+            el('metric-count').innerText = `${s.metrics.total} cerrados · ${s.positions.length} abiertos · ${s.metrics.wins} ganados`;
+            el('stat-total').textContent=s.metrics.total;
+            el('stat-wins').textContent=s.metrics.wins;
+            el('stat-losses').textContent=s.metrics.losses;
+            drawChart(s.trades);
+            el('trade-costs').textContent=`Compras paper: ${s.metrics.buys} · Red estimada: ${fmt(s.metrics.networkFeesSol,6)} SOL · DEX estimado: ${fmt(s.metrics.dexFeesSol,6)} SOL (incluye posiciones abiertas; impacto adicional)`;
+            el('positions').innerHTML = `<b>Posiciones abiertas</b><div class="mt-2 space-y-2">${s.positions.length ? s.positions.map(p=>{
+                const link=chart(p.mint);
+                return `<div>${link?`<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-cyan-400 underline">${safe(p.symbol)} ↗ Gráfico</a>`:safe(p.symbol)} · ${fmt(p.estimate?.pnlSol)} SOL (${fmt(p.estimate?.pnlPct,2)}%) · <span class="text-slate-500">${safe(p.mint)}</span></div>`;
+            }).join(''):'Sin posiciones'}</div>`;
+            el('trades-list').innerHTML=s.trades.length ? s.trades.slice(0,60).map(t=>{
+                const link=chart(t.mint), source=txurl(t.signal);
+                return `<div class="bg-slate-950 p-2 rounded border border-slate-800">
+                    <div class="flex justify-between"><div><b>${safe(t.side)} · ${safe(t.symbol)}</b><div class="text-slate-500">${new Date(t.at).toLocaleString()}</div></div><div class="text-right ${t.pnlSol<0?'text-red-400':'text-emerald-400'}">${t.pnlSol==null?'Abierta':fmt(t.pnlSol,5)+' SOL'}</div></div>
+                    <div class="mt-1 text-slate-400">Bruto ${fmt(t.grossSol)} · DEX ${fmt(t.dexFeeSol,7)} · Red ${fmt(t.networkFeeSol,7)} · Impacto ${fmt(t.impactPct,2)}%</div>
+                    <div class="mt-1 break-all text-slate-500">Contrato: ${safe(t.mint)}</div>
+                    <div class="mt-1 flex gap-4">${link?`<a class="text-cyan-400 underline" target="_blank" rel="noopener noreferrer" href="${link}">Abrir gráfico ↗</a>`:''}${source?`<a class="text-cyan-400 underline" target="_blank" rel="noopener noreferrer" href="${source}">Ver señal en Solscan ↗</a>`:''}</div>
+                </div>`;
+            }).join(''):'<p class="text-slate-500 text-center py-4">Sin señales verificadas todavía.</p>';
+            el('events').innerHTML=s.events.slice(0,25).map((e,i)=>`<div class="border-b border-slate-800 pb-2"><div class="flex gap-2 justify-between"><span class="break-all">${safe(eventText(e))}</span><button type="button" data-event="${i}" aria-label="Copiar señal ${i+1}" class="shrink-0 self-start px-2 py-1 bg-slate-700 rounded text-white">📋</button></div></div>`).join('') || 'Esperando señales';
+        }
+        async function toggleBot() {
+            const c=current?.config;if (!c) return;
+            const running=!c.enabled, wallet=el('target-wallet').value.trim();
+            if (running&&!pubkey(wallet)) { alert('Dirección de wallet inválida. Pega solo la dirección pública.'); return; }
+            await submitConfig(running,false);
+        }
+        async function submitConfig(enabled,fromSave=true) {
+            const wallet=el('target-wallet').value.trim();
+            const status=el('save-status'),btn=el('save-config');
+            status.textContent='Guardando…';btn.disabled=true;
+            try {
+                const values={paper:true,enabled,wallet,solAmount:Number(el('amount-sol').value),maxSlippage:Number(el('max-slippage').value),takeProfit:Number(el('take-profit').value),takeProfitSellPct:Number(el('tp-sell').value),stopLoss:Number(el('stop-loss').value),trailingStopPct:Number(el('trailing-stop').value),minLiquidityUsd:Number(el('min-liquidity').value),maxPoolAgeMin:Number(el('max-pool-age').value),priorityFeeSol:Number(el('priority-fee').value)};
+                const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});
+                const data=await res.json();if(!res.ok)throw Error(data.error||'El servidor rechazó los parámetros');
+                for(const key of ['takeProfit','takeProfitSellPct','stopLoss','trailingStopPct','minLiquidityUsd','maxPoolAgeMin','priorityFeeSol']) if(Number(data.config?.[key])!==values[key])throw Error('El servidor sigue usando una versión anterior. Cierra el Node viejo y arranca el bot actualizado.');
+                updateUI(data);status.textContent=`✓ Parámetros paper guardados: TP ${data.config.takeProfit}%, SL ${data.config.stopLoss}%, trailing ${data.config.trailingStopPct}%.`;
+            } catch(e) { status.textContent=`No se guardó: ${e.message}`;if(!fromSave)alert(e.message); }
+            finally {btn.disabled=false;}
+        }
+        el('save-config').addEventListener('click',()=>submitConfig(Boolean(current?.config.enabled)));
+        function updateConfig(){
+            const live=el('bot-mode').value==='live';
+            if(live && current?.config.enabled){el('bot-mode').value='paper';alert('Detén el bot paper antes de preparar la wallet live.');return;}
+            el('live-setup').hidden=!live;
+            el('btn-toggle').disabled=live;
+            el('btn-toggle').style.opacity=live?'0.5':'1';
+        }
+        el('reset-data').addEventListener('click',async()=>{
+            if(!confirm('¿Borrar TODAS las operaciones y posiciones paper guardadas y detener el bot? No se puede deshacer.'))return;
+            try {const r=await fetch('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:'BORRAR'})});const s=await r.json();if(!r.ok)throw Error(s.error);updateUI(s);alert('Historial paper borrado. Bot pausado.');}
+            catch(e){alert(`No se pudo borrar: ${e.message}`)}
+        });
+        el('connect-wallet').addEventListener('click',async()=>{
+            const status=el('wallet-status');
+            const provider=window.phantom?.solana || (window.solana?.isPhantom?window.solana:null);
+            if(!provider?.isPhantom){status.textContent='Phantom no se detecta. Abre http://localhost:3000 desde el navegador interno de Phantom.';return;}
+            try {
+                status.textContent='Esperando autorización en Phantom…';
+                const wallet=(await provider.connect()).publicKey.toBase58();
+                if(!provider.signMessage)throw Error('Esta versión de Phantom no permite firmar mensajes desde este navegador.');
+                const a=await fetch('/api/wallet/challenge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({wallet})});
+                const challenge=await a.json();if(!a.ok)throw Error(challenge.error);
+                const signed=await provider.signMessage(new TextEncoder().encode(challenge.message),'utf8');
+                const bytes=new Uint8Array(signed.signature);
+                const signature=btoa(Array.from(bytes,b=>String.fromCharCode(b)).join(''));
+                const b=await fetch('/api/wallet/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({wallet,signature})});
+                const result=await b.json();if(!b.ok)throw Error(result.error);
+                status.textContent=`Wallet verificada: ${wallet}. Live automático aún deshabilitado.`;
+            }catch(e){status.textContent=`No se verificó la wallet: ${e.message}`}
+        });
+        fetch('/api/state').then(r=>r.json()).then(updateUI).catch(e=>el('rpc-status').innerText=e.message);
+        function connectWS(){const ws=new WebSocket(`ws://${location.host}`);ws.onmessage=e=>updateUI(JSON.parse(e.data));ws.onclose=()=>setTimeout(connectWS,2500)}connectWS();
+    </script>
+</body>
+</html>

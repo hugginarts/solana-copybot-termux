@@ -1,0 +1,19 @@
+{
+  "name": "sol-copytrade-paper-termux",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check src/engine.js && node --check src/watcher.js && node --check src/market.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  }
+}
